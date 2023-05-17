@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const cookieParser = require('cookie-parser')
 const bcrypt = require('bcryptjs') 
+const ws = require('ws') 
 const User = require('./models/user');
 
 const app = express();
@@ -84,7 +85,30 @@ app.post('/login', async (req,res)=>{
     }
   }
 })
+const server = app.listen(3000);
 
-app.listen(port, () => {
-    console.log(`Example app listening on port ${port}`)
-})
+const wss = new ws.WebSocketServer({server});
+
+wss.on('connection', (connection, req)=>{
+  
+  const cookies = req.headers.cookie;
+  if(cookies){
+    const tokenCookieString = cookies.split(";").find(string => string.startsWith('token'));
+    if(tokenCookieString){
+      const token = tokenCookieString.split('=')[1]
+      if(token){
+        jwt.verify(token, process.env.JWT_SECRET, {}, (err, userData)=>{
+          if(err) throw err;
+          const {userId, username} = userData;
+          connection.userId = userId;
+          connection.userName = username;
+        })
+      }
+    }
+  }
+  [...wss.clients].forEach(client=> {
+   client.send(JSON.stringify({
+     online: [...wss.clients].map(c => ({userId: c.userId, username: c.userName}))
+   })) 
+  })
+});
