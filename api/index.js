@@ -6,8 +6,9 @@ const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const cookieParser = require('cookie-parser')
 const bcrypt = require('bcryptjs') 
-const ws = require('ws') 
 const User = require('./models/user');
+const Message = require('./models/message')
+const ws = require('ws'); 
 
 const app = express();
 // middlewares
@@ -78,7 +79,6 @@ app.post('/login', async (req,res)=>{
       jwt.sign({userId: foundUser._id, username}, process.env.JWT_SECRET,{},(err,token)=>{
         if(err) throw err;
         res.cookie('token', token, {sameSite: 'none', secure: true}).status(201).json({
-           // {sameSite: 'none', secure: true}
             id: foundUser._id,
          });
      })
@@ -90,7 +90,7 @@ const server = app.listen(3000);
 const wss = new ws.WebSocketServer({server});
 
 wss.on('connection', (connection, req)=>{
-  
+
   const cookies = req.headers.cookie;
   if(cookies){
     const tokenCookieString = cookies.split(";").find(string => string.startsWith('token'));
@@ -106,9 +106,31 @@ wss.on('connection', (connection, req)=>{
       }
     }
   }
-  [...wss.clients].forEach(client=> {
-   client.send(JSON.stringify({
-     online: [...wss.clients].map(c => ({userId: c.userId, username: c.userName}))
+  
+  connection.on('message', async (message)=>{
+
+    messageData = JSON.parse(message.toString());
+    const {recipient, text} = messageData;
+    if(recipient && text){
+     const MessageDoc = await Message.create({
+        sender: connection.userId,
+        recipient,
+        text
+      });
+      [...wss.clients]
+      .filter(client => client.userId === recipient)
+      .forEach(client => client.send(JSON.stringify({
+        text,
+        sender: connection.userId,
+         recipient,
+         id: messageData._id,
+        })))
+    }
+  })
+  
+  wss.clients.forEach(client=> {
+    client.send(JSON.stringify({
+      online: [...wss.clients].map(c => ({userId: c.userId, username: c.userName}))
    })) 
   })
 });
